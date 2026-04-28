@@ -1,6 +1,6 @@
 #version 330 core
 
-#define MAX_LIGHTS 6
+#define MAX_LIGHTS 9
 
 in vec2 TexCoord;
 in vec3 FragPos;
@@ -21,14 +21,18 @@ uniform vec3 sunColor;
 uniform float ambientStrength;
 
 uniform int numLights;
+uniform int numShadowLights;
 uniform vec3 lightPositions[MAX_LIGHTS];
 uniform vec3 lightColors[MAX_LIGHTS];
+uniform float lightRanges[MAX_LIGHTS];
 uniform vec3 viewPos;
 uniform float shadowFarPlane;
 uniform bool useLighting;
 uniform float emissiveStrength;
 uniform float uvScale;
 uniform bool useWorldUV;
+uniform vec3 tintColor;
+uniform float tintStrength;
 
 const vec3 gridSamplingDisk[20] = vec3[](
     vec3( 1.0,  1.0,  1.0), vec3( 1.0, -1.0,  1.0), vec3(-1.0, -1.0,  1.0), vec3(-1.0,  1.0,  1.0),
@@ -50,6 +54,9 @@ float sampleShadowMap(int lightIndex, vec3 sampleDir)
 
 float calculatePointShadow(int lightIndex, vec3 norm)
 {
+    if (lightIndex >= numShadowLights)
+        return 0.0;
+
     vec3 fragToLight = FragPos - lightPositions[lightIndex];
     float currentDepth = length(fragToLight);
 
@@ -94,21 +101,22 @@ void main()
     }
 
     vec4 texColor = texture(texture1, finalUV);
+    vec3 surfaceColor = mix(texColor.rgb, texColor.rgb * tintColor, tintStrength);
 
     if (!useLighting)
     {
-        vec3 unlit = texColor.rgb + emissiveStrength * texColor.rgb;
+        vec3 unlit = surfaceColor + emissiveStrength * surfaceColor;
         FragColor = vec4(unlit, texColor.a);
         return;
     }
 
     vec3 norm = normalize(Normal);
 
-    vec3 ambient = ambientStrength * sunColor * texColor.rgb;
+    vec3 ambient = ambientStrength * sunColor * surfaceColor;
 
     vec3 moonDir = normalize(-sunDirection);
     float moonDiff = max(dot(norm, moonDir), 0.0);
-    vec3 result = ambient + moonDiff * sunColor * texColor.rgb;
+    vec3 result = ambient + moonDiff * sunColor * surfaceColor;
 
     for (int i = 0; i < numLights && i < MAX_LIGHTS; i++)
     {
@@ -118,7 +126,7 @@ void main()
 
         float diff = max(dot(norm, lightDir), 0.0);
 
-        float radius = shadowFarPlane * 0.6;
+        float radius = max(lightRanges[i], 0.001);
         float att_linear = 4.5 / radius;
         float att_quadratic = 75.0 / (radius * radius);
         float attenuation = 1.0 / (1.0 + att_linear * dist + att_quadratic * dist * dist);
@@ -126,11 +134,11 @@ void main()
 
         float shadow = calculatePointShadow(i, norm);
 
-        vec3 diffuse = diff * lightColors[i] * texColor.rgb;
+        vec3 diffuse = diff * lightColors[i] * surfaceColor;
         result += (1.0 - shadow) * diffuse * attenuation;
     }
 
-    result += emissiveStrength * texColor.rgb;
+    result += emissiveStrength * surfaceColor;
 
     FragColor = vec4(result, texColor.a);
 }
